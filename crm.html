@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<!--
+╔══════════════════════════════════════════════════════════════════╗
+║          CRM מדריך נהיגה  —  SETUP GUIDE                        ║
+╠══════════════════════════════════════════════════════════════════╣
+║  STEP 1 — Create a free Supabase project                        ║
+║    https://supabase.com → New project                           ║
+║                                                                  ║
+║  STEP 2 — Run this SQL in Supabase → SQL Editor → New query     ║
+║  ─────────────────────────────────────────────────────────────  ║
+║  create table instructor_state (                                 ║
+║    instructor_id uuid primary key,                               ║
+║    name          text not null default 'מדריך',                  ║
+║    state_json    jsonb not null default '{}',                    ║
+║    updated_at    timestamptz default now()                       ║
+║  );                                                              ║
+║  alter table instructor_state enable row level security;         ║
+║  create policy "own data" on instructor_state                    ║
+║    for all using (auth.uid() = instructor_id);                   ║
+║  ─────────────────────────────────────────────────────────────  ║
+║                                                                  ║
+║  STEP 3 — Copy your project keys:                               ║
+║    Supabase dashboard → Settings → API                          ║
+║    Paste SUPABASE_URL and SUPABASE_ANON_KEY below               ║
+║                                                                  ║
+║  STEP 4 — Deploy (free, 30 seconds):                            ║
+║    netlify.com/drop  →  drag this file onto the page            ║
+║    You'll get a public URL like  https://your-crm.netlify.app   ║
+╚══════════════════════════════════════════════════════════════════╝
+-->
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM מדריך נהיגה</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { colors: {
+        surface: '#F8F7F4', ink: '#2C2C1E', muted: '#6B7280',
+        accent: '#4A7C59', 'accent-lt': '#E8F0EB', card: '#FFFFFF'
+      }}}
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <!-- Supabase JS SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html { font-size: 17px; }
+    body { font-family: 'Heebo', sans-serif; background: #F8F7F4; color: #2C2C1E; min-height: 100vh; }
+    .page-section { display: none; }
+    .page-section.active { display: block; }
+    .nav-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 14px;
+      border-radius: 12px; text-align: right; transition: all .15s; font-weight: 500; color: #6B7280; }
+    .nav-item:hover { background: #E8F0EB; color: #4A7C59; }
+    .nav-item.active { background: #E8F0EB; color: #4A7C59; font-weight: 700; }
+    .nav-item svg { flex-shrink: 0; }
+    .btn-primary { display:inline-flex; align-items:center; gap:8px; background:#4A7C59; color:#fff;
+      padding:11px 20px; border-radius:12px; font-weight:700; font-size:.95rem;
+      transition:background .15s; cursor:pointer; border:none; font-family:'Heebo',sans-serif; }
+    .btn-primary:hover { background:#3a6347; }
+    .btn-ghost { display:inline-flex; align-items:center; gap:8px; background:#F0F0EC; color:#2C2C1E;
+      padding:11px 20px; border-radius:12px; font-weight:600; font-size:.95rem;
+      transition:background .15s; cursor:pointer; border:none; font-family:'Heebo',sans-serif; }
+    .btn-ghost:hover { background:#E4E4DC; }
+    input, select, textarea { font-family: 'Heebo', sans-serif; font-size: 1rem; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #CDD0CA; border-radius: 3px; }
+    .cal-cell { min-height: 56px; border-right: 1px solid #F0F0EC; padding: 3px; cursor: pointer; vertical-align: top; }
+    .cal-cell:hover { background: rgba(74,124,89,.05); }
+    .cal-today { background: rgba(74,124,89,.06); }
+    .lesson-block { border-radius: 7px; padding: 3px 7px; font-size: .73rem; cursor: pointer;
+      border-right: 3px solid; margin-bottom: 2px; }
+    .lesson-block:hover { opacity: .8; }
+    .badge { display:inline-flex; align-items:center; padding:3px 10px; border-radius:999px; font-size:.8rem; font-weight:600; }
+    .badge-confirmed { background:#DCFCE7; color:#166534; }
+    .badge-pending   { background:#FEF9C3; color:#854D0E; }
+    .badge-cancelled { background:#FEE2E2; color:#991B1B; }
+    .badge-done      { background:#F3F4F6; color:#4B5563; }
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:200;
+      display:none; align-items:center; justify-content:center; padding:16px; }
+    .modal-overlay.open { display:flex; }
+    .modal-box { background:#fff; border-radius:20px; width:100%; max-width:500px;
+      padding:32px; max-height:90vh; overflow-y:auto; box-shadow: 0 24px 64px rgba(0,0,0,.18); }
+    .field-label { display:block; font-size:.85rem; font-weight:700; color:#2C2C1E; margin-bottom:7px; }
+    .field-input { width:100%; border:2px solid #E5E7EB; border-radius:12px;
+      padding:11px 14px; font-size:1rem; font-family:'Heebo',sans-serif;
+      transition:border .15s; outline:none; background:#fff; color:#2C2C1E; }
+    .field-input:focus { border-color:#4A7C59; }
+    .stat-card { background:#fff; border-radius:18px; padding:22px 24px;
+      border:1px solid #EBEBEB; box-shadow:0 1px 4px rgba(0,0,0,.04); }
+    .kanban-col { flex: 1; min-width: 220px; }
+    .kanban-card { background:#fff; border-radius:14px; border:1px solid #EBEBEB;
+      padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.04); margin-bottom:10px; transition:box-shadow .15s; }
+    .kanban-card:hover { box-shadow:0 4px 12px rgba(0,0,0,.09); }
+    .avatar-circle { display:flex; align-items:center; justify-content:center;
+      border-radius:12px; background:#E8F0EB; color:#4A7C59; font-weight:700; flex-shrink:0; }
+    /* Auth screen */
+    #auth-screen { position:fixed; inset:0; background:#F8F7F4; z-index:500;
+      display:flex; align-items:center; justify-content:center; }
+    #auth-screen.hidden { display:none; }
+    /* Cloud sync indicator */
+    #sync-dot { width:8px; height:8px; border-radius:50%; background:#4A7C59;
+      display:inline-block; margin-left:6px; transition:background .3s; }
+    #sync-dot.syncing { background:#F59E0B; animation:pulse 1s infinite; }
+    #sync-dot.error   { background:#EF4444; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    #toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+      background:#2C2C1E; color:#fff; padding:12px 24px; border-radius:12px; font-size:.9rem;
+      font-weight:600; z-index:300; opacity:0; transition:opacity .25s; pointer-events:none;
+      white-space:nowrap; }
+    /* Setup banner */
+    #setup-banner { display:none; background:#FEF3C7; border-bottom:2px solid #F59E0B;
+      padding:10px 24px; font-size:.875rem; font-weight:600; color:#92400E; text-align:center; }
+    #setup-banner.visible { display:block; }
+  </style>
+</head>
+<body>
+
+<!-- ===================== SETUP BANNER ===================== -->
+<div id="setup-banner">
+  ⚠️ מצב הדגמה — הנתונים נשמרים רק במכשיר זה.
+  כדי להפעיל גיבוי ענן, הכנס את מפתחות Supabase בקוד (ראה הוראות בהערות בראש הקובץ).
+</div>
+
+<!-- ===================== AUTH SCREEN ===================== -->
+<div id="auth-screen">
+  <div style="width:100%;max-width:420px;padding:16px;">
+    <!-- Logo -->
+    <div style="text-align:center;margin-bottom:32px;">
+      <div style="width:60px;height:60px;background:#4A7C59;border-radius:18px;
+        display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="none" viewBox="0 0 24 24"
+          stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+        </svg>
+      </div>
+      <h1 style="font-size:1.8rem;font-weight:800;color:#2C2C1E;margin:0;">CRM נהיגה</h1>
+      <p style="color:#9CA3AF;margin-top:4px;font-size:.95rem;">מערכת ניהול למדריכי נהיגה</p>
+    </div>
+
+    <!-- Card -->
+    <div style="background:#fff;border-radius:24px;padding:36px;box-shadow:0 8px 40px rgba(0,0,0,.10);">
+      <!-- Tabs -->
+      <div style="display:flex;gap:0;margin-bottom:28px;background:#F3F4F6;border-radius:12px;padding:4px;">
+        <button id="tab-login" onclick="switchAuthTab('login')"
+          style="flex:1;padding:9px;border-radius:9px;border:none;cursor:pointer;font-family:'Heebo',sans-serif;
+          font-weight:700;font-size:.95rem;background:#fff;color:#2C2C1E;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+          כניסה
+        </button>
+        <button id="tab-signup" onclick="switchAuthTab('signup')"
+          style="flex:1;padding:9px;border-radius:9px;border:none;cursor:pointer;font-family:'Heebo',sans-serif;
+          font-weight:700;font-size:.95rem;background:transparent;color:#9CA3AF;">
+          הרשמה
+        </button>
+      </div>
+
+      <!-- Error message -->
+      <div id="auth-error" style="display:none;background:#FEE2E2;color:#991B1B;padding:10px 14px;
+        border-radius:10px;font-size:.875rem;font-weight:600;margin-bottom:16px;"></div>
+
+      <!-- Login Form -->
+      <form id="form-login" onsubmit="handleSignIn(event)" style="display:flex;flex-direction:column;gap:16px;">
+        <div>
+          <label class="field-label">אימייל</label>
+          <input id="li-email" type="email" required placeholder="your@email.com" class="field-input">
+        </div>
+        <div>
+          <label class="field-label">סיסמה</label>
+          <input id="li-pass" type="password" required placeholder="••••••••" class="field-input">
+        </div>
+        <button type="submit" id="btn-login" class="btn-primary" style="width:100%;justify-content:center;padding:14px;font-size:1rem;margin-top:4px;">
+          כניסה לחשבון
+        </button>
+      </form>
+
+      <!-- Signup Form -->
+      <form id="form-signup" onsubmit="handleSignUp(event)" style="display:none;flex-direction:column;gap:16px;">
+        <div>
+          <label class="field-label">שם מלא</label>
+          <input id="su-name" type="text" required placeholder="יוסי מזרחי" class="field-input">
+        </div>
+        <div>
+          <label class="field-label">אימייל</label>
+          <input id="su-email" type="email" required placeholder="your@email.com" class="field-input">
+        </div>
+        <div>
+          <label class="field-label">סיסמה (6 תווים לפחות)</label>
+          <input id="su-pass" type="password" required minlength="6" placeholder="••••••••" class="field-input">
+        </div>
+        <button type="submit" id="btn-signup" class="btn-primary" style="width:100%;justify-content:center;padding:14px;font-size:1rem;margin-top:4px;">
+          צור חשבון חינמי
+        </button>
+      </form>
+
+      <!-- Demo mode link -->
+      <div style="text-align:center;margin-top:18px;">
+        <button onclick="enterDemoMode()"
+          style="font-size:.85rem;color:#9CA3AF;background:none;border:none;cursor:pointer;
+          font-family:'Heebo',sans-serif;text-decoration:underline;font-weight:600;">
+          כניסה ללא חשבון (מצב הדגמה — נתונים לא יישמרו בענן)
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== SIDEBAR ===================== -->
+<aside style="position:fixed;right:0;top:0;width:240px;height:100vh;background:#fff;
+  border-left:1px solid #EBEBEB;display:flex;flex-direction:column;z-index:100;overflow-y:auto;">
+  <!-- Logo -->
+  <div style="padding:22px 20px 18px;border-bottom:1px solid #F3F3F0;">
+    <div style="display:flex;align-items:center;gap:11px;">
+      <div style="width:40px;height:40px;background:#4A7C59;border-radius:12px;
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24"
+          stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+        </svg>
+      </div>
+      <div>
+        <div style="font-weight:800;font-size:1rem;color:#2C2C1E;line-height:1.2;">CRM נהיגה</div>
+        <div style="display:flex;align-items:center;font-size:.75rem;color:#9CA3AF;">
+          מערכת ניהול <span id="sync-dot" title="סטטוס סנכרון"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nav -->
+  <nav style="flex:1;padding:12px 10px;">
+    <p style="font-size:.72rem;font-weight:700;color:#9CA3AF;padding:8px 10px 4px;letter-spacing:.05em;">ראשי</p>
+    <button class="nav-item active" data-page="dashboard" onclick="showPage('dashboard')">
+      <i data-lucide="layout-dashboard" style="width:18px;height:18px;"></i><span>לוח בקרה</span>
+    </button>
+    <button class="nav-item" data-page="calendar" onclick="showPage('calendar')">
+      <i data-lucide="calendar" style="width:18px;height:18px;"></i><span>יומן</span>
+    </button>
+    <button class="nav-item" data-page="lessons" onclick="showPage('lessons')">
+      <i data-lucide="book-open" style="width:18px;height:18px;"></i><span>שיעורים</span>
+    </button>
+    <p style="font-size:.72rem;font-weight:700;color:#9CA3AF;padding:14px 10px 4px;letter-spacing:.05em;">לקוחות</p>
+    <button class="nav-item" data-page="leads" onclick="showPage('leads')">
+      <i data-lucide="user-plus" style="width:18px;height:18px;"></i><span>לידים</span>
+    </button>
+    <button class="nav-item" data-page="students" onclick="showPage('students')">
+      <i data-lucide="users" style="width:18px;height:18px;"></i><span>תלמידים</span>
+    </button>
+  </nav>
+
+  <!-- User footer -->
+  <div style="padding:14px 16px;border-top:1px solid #F3F3F0;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div class="avatar-circle" style="width:36px;height:36px;font-size:.95rem;" id="sidebar-avatar">י</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:700;font-size:.875rem;color:#2C2C1E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="sidebar-name">מדריך</div>
+        <div style="font-size:.72rem;color:#9CA3AF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="sidebar-email"></div>
+      </div>
+    </div>
+    <button onclick="handleSignOut()"
+      style="width:100%;padding:8px;border-radius:10px;border:1px solid #E5E7EB;background:#fff;
+      cursor:pointer;font-family:'Heebo',sans-serif;font-size:.83rem;font-weight:600;color:#9CA3AF;
+      display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;"
+      onmouseover="this.style.background='#FEF2F2';this.style.color='#DC2626';this.style.borderColor='#FCA5A5'"
+      onmouseout="this.style.background='#fff';this.style.color='#9CA3AF';this.style.borderColor='#E5E7EB'">
+      <i data-lucide="log-out" style="width:14px;height:14px;"></i> יציאה
+    </button>
+  </div>
+</aside>
+
+<!-- ===================== MAIN ===================== -->
+<main style="margin-right:240px;min-height:100vh;padding:32px 36px;">
+  <section id="page-dashboard" class="page-section active"><div id="dashboard-content"></div></section>
+  <section id="page-calendar"  class="page-section"><div id="calendar-content"></div></section>
+  <section id="page-lessons"   class="page-section"><div id="lessons-content"></div></section>
+  <section id="page-leads"     class="page-section"><div id="leads-content"></div></section>
+  <section id="page-students"  class="page-section"><div id="students-content"></div></section>
+</main>
+
+<!-- ===================== MODAL ===================== -->
+<div id="modal-overlay" class="modal-overlay" onclick="handleOverlayClick(event)">
+  <div class="modal-box"><div id="modal-body"></div></div>
+</div>
+
+<!-- ===================== TOAST ===================== -->
+<div id="toast"></div>
+
+<script>
+// ============================================================
+// ① CONFIGURATION  — paste your Supabase keys here
+// ============================================================
+const SUPABASE_URL      = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+
+const DEMO_MODE = (SUPABASE_URL === 'YOUR_SUPABASE_URL');
+
+// Initialise Supabase client (only when keys are real)
+let sb = null;
+if (!DEMO_MODE) {
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+// ============================================================
+// ② STATE & STORAGE
+// ============================================================
+const STORAGE_KEY = 'driving_crm_v2';
+let currentUser   = null;   // Supabase user object
+let S             = null;   // in-memory app state
+
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+function daysFromNow(n) {
+  const d = new Date(); d.setDate(d.getDate() + n);
+  return d.toISOString().split('T')[0];
+}
+
+function buildDefaultState(instructorName) {
+  const t = todayStr(), t1 = daysFromNow(1), t2 = daysFromNow(2),
+        tm1 = daysFromNow(-1), tm2 = daysFromNow(-2);
+  return {
+    instructor: { name: instructorName || 'מדריך' },
+    students: [
+      { id:'s1', name:'דוד לוי',    phone:'050-1234567', email:'david@example.com',  licenseType:'B', startDate:'2026-03-01', notes:'מתחיל, צריך סבלנות', avatar:'ד', docName:'' },
+      { id:'s2', name:'מיכל כהן',   phone:'052-9876543', email:'michal@example.com', licenseType:'B', startDate:'2026-02-15', notes:'מהירה ללמוד',         avatar:'מ', docName:'' },
+      { id:'s3', name:'אבי שפירא',  phone:'054-5554321', email:'avi@example.com',    licenseType:'B', startDate:'2026-04-01', notes:'',                    avatar:'א', docName:'' },
+      { id:'s4', name:'רחל גולן',   phone:'050-7778888', email:'rachel@example.com', licenseType:'A', startDate:'2026-01-10', notes:'לקחה שיעורים בעבר',  avatar:'ר', docName:'' },
+      { id:'s5', name:'נועם ברק',   phone:'053-1112222', email:'noam@example.com',   licenseType:'B', startDate:'2026-05-01', notes:'',                    avatar:'נ', docName:'' },
+      { id:'s6', name:'יעל אברהם', phone:'054-3334455', email:'yael@example.com',   licenseType:'B', startDate:'2026-04-20', notes:'חרדת נהיגה קלה',     avatar:'י', docName:'' },
+    ],
+    lessons: [
+      { id:'l1',  studentId:'s1', date:t,   time:'07:30', duration:45, status:'confirmed', notes:'' },
+      { id:'l2',  studentId:'s2', date:t,   time:'09:00', duration:45, status:'confirmed', notes:'שיעור כביש מהיר' },
+      { id:'l3',  studentId:'s3', date:t,   time:'11:00', duration:45, status:'confirmed', notes:'' },
+      { id:'l4',  studentId:'s4', date:t,   time:'14:00', duration:45, status:'cancelled', notes:'ביטלה – חולה' },
+      { id:'l5',  studentId:'s5', date:t,   time:'16:00', duration:45, status:'confirmed', notes:'שיעור חניה' },
+      { id:'l6',  studentId:'s6', date:t,   time:'18:00', duration:45, status:'pending',   notes:'לאשר' },
+      { id:'l7',  studentId:'s1', date:t1,  time:'08:00', duration:45, status:'confirmed', notes:'' },
+      { id:'l8',  studentId:'s2', date:t1,  time:'10:00', duration:45, status:'confirmed', notes:'' },
+      { id:'l9',  studentId:'s3', date:t2,  time:'09:00', duration:45, status:'confirmed', notes:'' },
+      { id:'l10', studentId:'s4', date:t2,  time:'11:30', duration:60, status:'confirmed', notes:'שיעור ארוך' },
+      { id:'l11', studentId:'s3', date:tm1, time:'09:00', duration:45, status:'done',      notes:'עבר בהצלחה' },
+      { id:'l12', studentId:'s4', date:tm1, time:'11:00', duration:45, status:'done',      notes:'' },
+      { id:'l13', studentId:'s1', date:tm2, time:'08:00', duration:45, status:'done',      notes:'שיפר חניה' },
+    ],
+    leads: [
+      { id:'ld1', name:'יוני אהרון',  phone:'050-3334444', source:'המלצה',    stage:'new',       followUpDate:t1,  notes:'מתעניין ברישיון B' },
+      { id:'ld2', name:'שירה בן דוד', phone:'052-5556666', source:'אינסטגרם', stage:'contacted', followUpDate:t,   notes:'דיברנו, רוצה לנסות' },
+      { id:'ld3', name:'רון גרינברג', phone:'054-7778889', source:'גוגל',     stage:'trial',     followUpDate:t1,  notes:'שיעור נסיון נקבע' },
+      { id:'ld4', name:'טל שמיר',    phone:'050-9990001', source:'פייסבוק',  stage:'enrolled',  followUpDate:'',  notes:'נרשם, תשלום ראשון' },
+      { id:'ld5', name:'גלי אלון',   phone:'053-2223334', source:'המלצה',    stage:'new',       followUpDate:daysFromNow(-1), notes:'' },
+    ],
+    activity: [
+      { id:'a1', type:'done',    text:'שיעור הושלם: אבי שפירא',     ts: todayStr()+'T10:10:00' },
+      { id:'a2', type:'lead',    text:'ליד חדש: יוני אהרון',         ts: todayStr()+'T09:00:00' },
+      { id:'a3', type:'cancel',  text:'שיעור בוטל: רחל גולן 14:00', ts: todayStr()+'T08:30:00' },
+      { id:'a4', type:'student', text:'תלמיד חדש: נועם ברק',         ts: daysFromNow(-1)+'T15:00:00' },
+    ]
+  };
+}
+
+// ============================================================
+// ③ CLOUD SYNC
+// ============================================================
+function setSyncStatus(status) {
+  // status: 'ok' | 'syncing' | 'error' | 'demo'
+  const dot = document.getElementById('sync-dot');
+  if (!dot) return;
+  dot.className = status === 'syncing' ? 'syncing' : status === 'error' ? 'error' : '';
+  dot.title = status === 'ok'      ? 'מסונכרן בענן ✓'
+            : status === 'syncing' ? 'מסנכרן...'
+            : status === 'error'   ? 'שגיאת סנכרון'
+            : 'מצב הדגמה — ללא ענן';
+}
+
+async function saveToCloud() {
+  if (!sb || !currentUser) { setSyncStatus('demo'); return; }
+  setSyncStatus('syncing');
+  try {
+    const { error } = await sb.from('instructor_state').upsert({
+      instructor_id: currentUser.id,
+      name:          S.instructor.name,
+      state_json:    S,
+      updated_at:    new Date().toISOString()
+    });
+    if (error) throw error;
+    setSyncStatus('ok');
+  } catch(e) {
+    console.error('Supabase save error:', e);
+    setSyncStatus('error');
+  }
+}
+
+async function loadFromCloud() {
+  if (!sb || !currentUser) return false;
+  try {
+    const { data, error } = await sb.from('instructor_state')
+      .select('state_json, name')
+      .eq('instructor_id', currentUser.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (data?.state_json) {
+      S = data.state_json;
+      // Ensure instructor name is up-to-date
+      if (data.name) S.instructor.name = data.name;
+      return true;
+    }
+    return false;
+  } catch(e) {
+    console.error('Supabase load error:', e);
+    return false;
+  }
+}
+
+// save() — called throughout the app; syncs async to cloud
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(S));
+  saveToCloud(); // fire-and-forget
+}
+
+function genId() { return '_' + Math.random().toString(36).slice(2, 11); }
+
+// ============================================================
+// ④ AUTH
+// ============================================================
+let authTab = 'login';
+
+function switchAuthTab(tab) {
+  authTab = tab;
+  document.getElementById('form-login').style.display  = tab === 'login'  ? 'flex' : 'none';
+  document.getElementById('form-signup').style.display = tab === 'signup' ? 'flex' : 'none';
+  const tl = document.getElementById('tab-login');
+  const ts = document.getElementById('tab-signup');
+  tl.style.background   = tab === 'login'  ? '#fff'        : 'transparent';
+  tl.style.color        = tab === 'login'  ? '#2C2C1E'     : '#9CA3AF';
+  tl.style.boxShadow    = tab === 'login'  ? '0 1px 3px rgba(0,0,0,.1)' : 'none';
+  ts.style.background   = tab === 'signup' ? '#fff'        : 'transparent';
+  ts.style.color        = tab === 'signup' ? '#2C2C1E'     : '#9CA3AF';
+  ts.style.boxShadow    = tab === 'signup' ? '0 1px 3px rgba(0,0,0,.1)' : 'none';
+  document.getElementById('auth-error').style.display = 'none';
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function setAuthLoading(loading) {
+  const btn = authTab === 'login'
+    ? document.getElementById('btn-login')
+    : document.getElementById('btn-signup');
+  btn.disabled    = loading;
+  btn.textContent = loading ? 'טוען...' : authTab === 'login' ? 'כניסה לחשבון' : 'צור חשבון חינמי';
+}
+
+async function handleSignIn(e) {
+  e.preventDefault();
+  if (!sb) { enterDemoMode(); return; }
+  setAuthLoading(true);
+  try {
+    const { data, error } = await sb.auth.signInWithPassword({
+      email:    document.getElementById('li-email').value.trim(),
+      password: document.getElementById('li-pass').value,
+    });
+    if (error) throw error;
+    currentUser = data.user;
+    await bootApp();
+  } catch(err) {
+    showAuthError(err.message === 'Invalid login credentials'
+      ? 'אימייל או סיסמה שגויים' : err.message);
+    setAuthLoading(false);
+  }
+}
+
+async function handleSignUp(e) {
+  e.preventDefault();
+  if (!sb) { enterDemoMode(); return; }
+  setAuthLoading(true);
+  const name  = document.getElementById('su-name').value.trim();
+  const email = document.getElementById('su-email').value.trim();
+  const pass  = document.getElementById('su-pass').value;
+  try {
+    const { data, error } = await sb.auth.signUp({ email, password: pass });
+    if (error) throw error;
+    currentUser = data.user;
+    S = buildDefaultState(name);
+    await saveToCloud();
+    updateSidebarUser(name, email);
+    launchApp();
+  } catch(err) {
+    showAuthError(err.message);
+    setAuthLoading(false);
+  }
+}
+
+async function handleSignOut() {
+  if (sb) await sb.auth.signOut();
+  currentUser = null;
+  S = null;
+  document.getElementById('auth-screen').classList.remove('hidden');
+  document.getElementById('setup-banner').classList.remove('visible');
+  toast('יצאת מהחשבון');
+}
+
+function enterDemoMode() {
+  currentUser = null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    S = raw ? JSON.parse(raw) : buildDefaultState('מדריך הדגמה');
+  } catch(e) { S = buildDefaultState('מדריך הדגמה'); }
+  document.getElementById('setup-banner').classList.add('visible');
+  updateSidebarUser(S.instructor.name, 'מצב הדגמה');
+  setSyncStatus('demo');
+  launchApp();
+}
+
+function updateSidebarUser(name, sub) {
+  const nameEl   = document.getElementById('sidebar-name');
+  const emailEl  = document.getElementById('sidebar-email');
+  const avatarEl = document.getElementById('sidebar-avatar');
+  if (nameEl)   nameEl.textContent   = name;
+  if (emailEl)  emailEl.textContent  = sub || '';
+  if (avatarEl) avatarEl.textContent = name.charAt(0);
+}
+
+function launchApp() {
+  document.getElementById('auth-screen').classList.add('hidden');
+  lucide.createIcons();
+  renderDashboard();
+}
+
+// Called after login — loads cloud state, then shows app
+async function bootApp() {
+  const loaded = await loadFromCloud();
+  if (!loaded) {
+    // New account — use demo data with their name
+    const name = currentUser.email.split('@')[0];
+    S = buildDefaultState(name);
+    await saveToCloud();
+  }
+  const email = currentUser.email;
+  updateSidebarUser(S.instructor.name, email);
+  setSyncStatus('ok');
+  launchApp();
+}
+
+// ============================================================
+// ⑤ UTILS
+// ============================================================
+function getStudent(id) { return S.students.find(s => s.id === id) || { name:'לא ידוע', avatar:'?', phone:'' }; }
+function fmtDate(d) { if (!d) return '—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
+function timeAgo(ts) {
+  const diff = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(diff/60000);
+  if (m < 2)  return 'לפני רגע';
+  if (m < 60) return `לפני ${m} דקות`;
+  const h = Math.floor(m/60);
+  if (h < 24) return `לפני ${h} שעות`;
+  return `לפני ${Math.floor(h/24)} ימים`;
+}
+const STATUS_LABEL = { confirmed:'מאושר', pending:'ממתין', cancelled:'בוטל', done:'בוצע' };
+const STATUS_BADGE_CLASS = { confirmed:'badge-confirmed', pending:'badge-pending', cancelled:'badge-cancelled', done:'badge-done' };
+function statusBadge(s) { return `<span class="badge ${STATUS_BADGE_CLASS[s]||'badge-done'}">${STATUS_LABEL[s]||s}</span>`; }
+const STAGE_LABEL = { new:'חדש', contacted:'יצרתי קשר', trial:'שיעור נסיון', enrolled:'נרשם', lost:'אבד' };
+function addActivity(type, text) {
+  S.activity.unshift({ id:genId(), type, text, ts: new Date().toISOString() });
+  if (S.activity.length > 30) S.activity.length = 30;
+}
+
+// Toast
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.opacity = '1';
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.style.opacity = '0', 2800);
+}
+
+// Modal
+function openModal(html) {
+  document.getElementById('modal-body').innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('open');
+  lucide.createIcons();
+}
+function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+function handleOverlayClick(e) { if (e.target===document.getElementById('modal-overlay')) closeModal(); }
+
+// Router
+let currentPage = 'dashboard';
+function showPage(page) {
+  currentPage = page;
+  document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  const btn = document.querySelector(`[data-page="${page}"]`);
+  if (btn) btn.classList.add('active');
+  renderPage(page);
+  window.scrollTo(0,0);
+}
+function renderPage(page) {
+  switch(page) {
+    case 'dashboard': renderDashboard(); break;
+    case 'calendar':  renderCalendar();  break;
+    case 'lessons':   renderLessons();   break;
+    case 'leads':     renderLeads();     break;
+    case 'students':  renderStudents();  break;
+  }
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function renderDashboard() {
+  const today = todayStr();
+  const todayLessons  = S.lessons.filter(l => l.date === today).sort((a,b) => a.time > b.time ? 1 : -1);
+  const upcomingCount = S.lessons.filter(l => l.date > today && l.status !== 'cancelled').length;
+  const overdueLeads  = S.leads.filter(l => l.followUpDate && l.followUpDate < today && l.stage !== 'enrolled' && l.stage !== 'lost');
+  const cancelledToday = todayLessons.filter(l => l.status === 'cancelled').length;
+
+  document.getElementById('sidebar-name').textContent   = S.instructor.name;
+  document.getElementById('sidebar-avatar').textContent = S.instructor.name.charAt(0);
+
+  const stats = [
+    { label:'שיעורים היום',   value:todayLessons.length, sub:`${todayLessons.filter(l=>l.status==='confirmed').length} מאושרים`, icon:'book-open',       color:'#4A7C59' },
+    { label:'תלמידים פעילים', value:S.students.length,   sub:'סה"כ רשומים',                                                      icon:'users',           color:'#2563EB' },
+    { label:'שיעורים קרובים', value:upcomingCount,        sub:'הימים הבאים',                                                      icon:'calendar-clock',  color:'#7C3AED' },
+    { label:'לידים לטיפול',   value:overdueLeads.length,  sub:'ממתינים למעקב',                                                    icon:'bell',            color:overdueLeads.length>0?'#D97706':'#4A7C59' },
+  ];
+  const statsHTML = stats.map(s => `
+    <div class="stat-card" style="display:flex;align-items:center;gap:16px;">
+      <div style="width:48px;height:48px;border-radius:14px;background:${s.color}18;
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="${s.icon}" style="width:22px;height:22px;color:${s.color};"></i>
+      </div>
+      <div>
+        <div style="font-size:2rem;font-weight:800;color:#2C2C1E;line-height:1;">${s.value}</div>
+        <div style="font-weight:700;color:#2C2C1E;font-size:.9rem;margin-top:2px;">${s.label}</div>
+        <div style="font-size:.8rem;color:#9CA3AF;">${s.sub}</div>
+      </div>
+    </div>`).join('');
+
+  const scheduleHTML = todayLessons.length
+    ? todayLessons.map(l => {
+        const st = getStudent(l.studentId);
+        return `<div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid #F5F5F0;">
+          <div style="width:54px;text-align:center;flex-shrink:0;">
+            <span style="font-size:1.1rem;font-weight:800;color:#2C2C1E;">${l.time}</span>
+          </div>
+          <div class="avatar-circle" style="width:36px;height:36px;font-size:.95rem;">${st.avatar}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;color:#2C2C1E;">${st.name}</div>
+            ${l.notes?`<div style="font-size:.8rem;color:#9CA3AF;">${l.notes}</div>`:''}
+          </div>
+          <div>${statusBadge(l.status)}</div>
+          <button onclick="editLesson('${l.id}')"
+            style="padding:6px;border-radius:8px;border:none;background:transparent;cursor:pointer;color:#9CA3AF;"
+            onmouseover="this.style.background='#F3F4F6'" onmouseout="this.style.background='transparent'">
+            <i data-lucide="pencil" style="width:15px;height:15px;display:block;"></i>
+          </button>
+        </div>`;
+      }).join('')
+    : `<div style="text-align:center;padding:32px 0;color:#9CA3AF;">אין שיעורים מתוכננים להיום</div>`;
+
+  const actIcons  = { done:'check-circle', lesson:'book-open', lead:'user-plus', student:'user-check', cancel:'x-circle' };
+  const actColors = { done:'#4A7C59', lesson:'#4A7C59', lead:'#2563EB', student:'#7C3AED', cancel:'#DC2626' };
+  const actBg     = { done:'#DCFCE7', lesson:'#DCFCE7', lead:'#DBEAFE', student:'#EDE9FE', cancel:'#FEE2E2' };
+  const activityHTML = S.activity.slice(0,6).map(a => `
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid #F9F9F7;">
+      <div style="width:32px;height:32px;border-radius:50%;background:${actBg[a.type]||'#F3F4F6'};
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
+        <i data-lucide="${actIcons[a.type]||'activity'}" style="width:14px;height:14px;color:${actColors[a.type]||'#6B7280'};"></i>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:.875rem;font-weight:600;color:#2C2C1E;line-height:1.3;">${a.text}</div>
+        <div style="font-size:.75rem;color:#9CA3AF;margin-top:2px;">${timeAgo(a.ts)}</div>
+      </div>
+    </div>`).join('') || `<div style="text-align:center;padding:20px;color:#9CA3AF;font-size:.875rem;">אין פעילות</div>`;
+
+  const attLines = [];
+  if (overdueLeads.length > 0) attLines.push(`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #FED7AA;">
+      <span style="font-size:.9rem;font-weight:600;color:#92400E;">${overdueLeads.length} לידים ממתינים למעקב</span>
+      <button onclick="showPage('leads')" style="font-size:.85rem;font-weight:700;color:#D97706;background:none;border:none;cursor:pointer;">עבור ›</button>
+    </div>`);
+  if (cancelledToday > 0) attLines.push(`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;">
+      <span style="font-size:.9rem;font-weight:600;color:#92400E;">${cancelledToday} שיעורים בוטלו היום</span>
+      <button onclick="showPage('lessons')" style="font-size:.85rem;font-weight:700;color:#D97706;background:none;border:none;cursor:pointer;">עבור ›</button>
+    </div>`);
+
+  const nowDate = new Date().toLocaleDateString('he-IL', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  document.getElementById('dashboard-content').innerHTML = `
+    <div style="margin-bottom:28px;">
+      <div style="font-size:.9rem;color:#9CA3AF;margin-bottom:4px;">${nowDate}</div>
+      <h1 style="font-size:2.4rem;font-weight:800;color:#2C2C1E;line-height:1.15;">בוקר טוב, ${S.instructor.name} 👋</h1>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:28px;">${statsHTML}</div>
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:20px;">
+      <div style="background:#fff;border-radius:18px;border:1px solid #EBEBEB;box-shadow:0 1px 4px rgba(0,0,0,.04);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid #F5F5F0;">
+          <h2 style="font-size:1.15rem;font-weight:800;color:#2C2C1E;">שיעורים היום</h2>
+          <button onclick="showPage('calendar')" style="font-size:.875rem;font-weight:700;color:#4A7C59;background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:4px;">
+            צפה ביומן <i data-lucide="arrow-left" style="width:14px;height:14px;"></i>
+          </button>
+        </div>
+        <div style="padding:0 22px;">${scheduleHTML}</div>
+        <div style="padding:14px 22px;">
+          <button onclick="openAddLessonModal()" class="btn-primary" style="width:100%;justify-content:center;">
+            <i data-lucide="plus" style="width:16px;height:16px;"></i> הוסף שיעור
+          </button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:18px;">
+        <div style="background:#fff;border-radius:18px;border:1px solid #EBEBEB;box-shadow:0 1px 4px rgba(0,0,0,.04);">
+          <div style="padding:16px 18px;border-bottom:1px solid #F5F5F0;">
+            <h2 style="font-size:1rem;font-weight:800;color:#2C2C1E;">פעילות אחרונה</h2>
+          </div>
+          <div style="padding:4px 18px;">${activityHTML}</div>
+        </div>
+        ${attLines.length > 0
+          ? `<div style="background:#FFFBEB;border-radius:18px;border:1px solid #FDE68A;padding:16px 18px;">
+               <h2 style="font-size:1rem;font-weight:800;color:#92400E;margin-bottom:2px;">דורש תשומת לב ⚠️</h2>
+               <div>${attLines.join('')}</div>
+             </div>`
+          : `<div style="background:#F0FDF4;border-radius:18px;border:1px solid #BBF7D0;padding:16px 18px;text-align:center;">
+               <div style="font-size:1.5rem;margin-bottom:6px;">✅</div>
+               <div style="font-weight:700;color:#166534;font-size:.9rem;">הכל מסודר!</div>
+             </div>`}
+      </div>
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+// ============================================================
+// CALENDAR
+// ============================================================
+let calDate = new Date();
+const DAY_NAMES  = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
+const TIME_SLOTS = (() => {
+  const s = [];
+  for (let h=7; h<=20; h++) { s.push(`${String(h).padStart(2,'0')}:00`); if(h<20) s.push(`${String(h).padStart(2,'0')}:30`); }
+  return s;
+})();
+
+function getWeekDays(date) {
+  const d = new Date(date); d.setDate(d.getDate()-d.getDay());
+  return Array.from({length:7},(_,i)=>{ const x=new Date(d); x.setDate(d.getDate()+i); return x; });
+}
+
+function renderCalendar() {
+  const weekDays = getWeekDays(calDate);
+  const today    = todayStr();
+  const lmap = {};
+  S.lessons.forEach(l => { const k=l.date+'_'+l.time; (lmap[k]=lmap[k]||[]).push(l); });
+  const sColors = {
+    confirmed:{ bg:'#DCFCE7', border:'#16A34A', text:'#166534' },
+    pending:  { bg:'#FEF9C3', border:'#CA8A04', text:'#854D0E' },
+    cancelled:{ bg:'#FEE2E2', border:'#DC2626', text:'#991B1B' },
+    done:     { bg:'#F3F4F6', border:'#9CA3AF', text:'#4B5563' },
+  };
+  const weekLabel = `${weekDays[0].toLocaleDateString('he-IL',{day:'numeric',month:'short'})} – ${weekDays[6].toLocaleDateString('he-IL',{day:'numeric',month:'short',year:'numeric'})}`;
+  const thCells = weekDays.map(d => {
+    const ds=d.toISOString().split('T')[0], isTdy=ds===today;
+    return `<th style="padding:10px 6px;text-align:center;background:${isTdy?'#E8F0EB':'#FAFAF8'};
+      border-bottom:2px solid ${isTdy?'#4A7C59':'#EBEBEB'};min-width:110px;">
+      <div style="font-size:.78rem;font-weight:700;color:${isTdy?'#4A7C59':'#9CA3AF'};">${DAY_NAMES[d.getDay()]}</div>
+      <div style="font-size:1.2rem;font-weight:800;color:${isTdy?'#4A7C59':'#2C2C1E'};">${d.getDate()}</div>
+    </th>`;
+  }).join('');
+  const bodyRows = TIME_SLOTS.map(slot => {
+    const tds = weekDays.map(d => {
+      const ds=d.toISOString().split('T')[0], lessons=lmap[ds+'_'+slot]||[], isTdy=ds===today;
+      const blocks=lessons.map(l => {
+        const st=getStudent(l.studentId), c=sColors[l.status]||sColors.done;
+        return `<div class="lesson-block" style="background:${c.bg};border-color:${c.border};color:${c.text};"
+          onclick="event.stopPropagation();editLesson('${l.id}')" title="${st.name}|${STATUS_LABEL[l.status]}">
+          <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${st.name}</strong>
+          <span style="opacity:.75;">${l.duration} דק'</span>
+        </div>`;
+      }).join('');
+      return `<td class="cal-cell ${isTdy?'cal-today':''}" onclick="openAddLessonModal('${ds}','${slot}')">${blocks}</td>`;
+    }).join('');
+    return `<tr>
+      <td style="text-align:center;font-size:.8rem;font-weight:600;color:#9CA3AF;padding:0 10px;white-space:nowrap;background:#FAFAF8;border-bottom:1px solid #F0F0EC;">${slot}</td>
+      ${tds}</tr>`;
+  }).join('');
+
+  document.getElementById('calendar-content').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+      <h1 style="font-size:2rem;font-weight:800;color:#2C2C1E;">יומן</h1>
+      <button onclick="openAddLessonModal()" class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px;"></i> הוסף שיעור</button>
+    </div>
+    <div style="background:#fff;border-radius:18px;border:1px solid #EBEBEB;box-shadow:0 1px 4px rgba(0,0,0,.04);overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #F0F0EC;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button onclick="prevWeek()" style="padding:7px;border-radius:9px;border:1px solid #E5E7EB;background:#fff;cursor:pointer;" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background='#fff'">
+            <i data-lucide="chevron-right" style="width:18px;height:18px;display:block;"></i>
+          </button>
+          <span style="font-size:1rem;font-weight:700;color:#2C2C1E;">${weekLabel}</span>
+          <button onclick="nextWeek()" style="padding:7px;border-radius:9px;border:1px solid #E5E7EB;background:#fff;cursor:pointer;" onmouseover="this.style.background='#F9FAFB'" onmouseout="this.style.background='#fff'">
+            <i data-lucide="chevron-left" style="width:18px;height:18px;display:block;"></i>
+          </button>
+        </div>
+        <button onclick="calDate=new Date();renderCalendar()" style="font-size:.85rem;font-weight:700;color:#4A7C59;background:#E8F0EB;border:none;padding:7px 14px;border-radius:8px;cursor:pointer;">היום</button>
+      </div>
+      <div style="overflow:auto;max-height:calc(100vh - 240px);">
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+          <colgroup><col style="width:58px;">${weekDays.map(()=>'<col>').join('')}</colgroup>
+          <thead><tr><th style="background:#FAFAF8;border-bottom:2px solid #EBEBEB;"></th>${thCells}</tr></thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:14px;flex-wrap:wrap;">
+      ${Object.entries(sColors).map(([k,c])=>`
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="width:12px;height:12px;border-radius:3px;background:${c.bg};border:2px solid ${c.border};"></div>
+          <span style="font-size:.8rem;color:#6B7280;font-weight:600;">${STATUS_LABEL[k]}</span>
+        </div>`).join('')}
+    </div>
+  `;
+  lucide.createIcons();
+}
+function prevWeek() { calDate.setDate(calDate.getDate()-7); renderCalendar(); }
+function nextWeek() { calDate.setDate(calDate.getDate()+7); renderCalendar(); }
+
+// ============================================================
+// LESSONS
+// ============================================================
+let lessonFilter = { status:'', studentId:'' };
+
+function renderLessons() {
+  let list = [...S.lessons].sort((a,b)=>(b.date+b.time)>(a.date+a.time)?1:-1);
+  if (lessonFilter.status)    list = list.filter(l=>l.status    ===lessonFilter.status);
+  if (lessonFilter.studentId) list = list.filter(l=>l.studentId ===lessonFilter.studentId);
+  const rows = list.map(l => {
+    const st=getStudent(l.studentId);
+    return `<tr style="border-bottom:1px solid #F5F5F0;">
+      <td style="padding:13px 16px;font-weight:600;color:#2C2C1E;">${fmtDate(l.date)}</td>
+      <td style="padding:13px 16px;font-weight:600;">${l.time}</td>
+      <td style="padding:13px 16px;">
+        <div style="display:flex;align-items:center;gap:9px;">
+          <div class="avatar-circle" style="width:32px;height:32px;font-size:.85rem;">${st.avatar}</div>
+          <span style="font-weight:600;">${st.name}</span>
+        </div>
+      </td>
+      <td style="padding:13px 16px;color:#6B7280;">${l.duration} דק'</td>
+      <td style="padding:13px 16px;">${statusBadge(l.status)}</td>
+      <td style="padding:13px 16px;color:#9CA3AF;font-size:.875rem;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${l.notes||''}">${l.notes||'—'}</td>
+      <td style="padding:13px 16px;">
+        <div style="display:flex;gap:4px;">
+          <button onclick="editLesson('${l.id}')" style="padding:7px;border-radius:8px;border:none;background:transparent;cursor:pointer;color:#4A7C59;" title="ערוך" onmouseover="this.style.background='#E8F0EB'" onmouseout="this.style.background='transparent'">
+            <i data-lucide="pencil" style="width:15px;height:15px;display:block;"></i>
+          </button>
+          <button onclick="cancelLesson('${l.id}')" style="padding:7px;border-radius:8px;border:none;background:transparent;cursor:pointer;color:#D97706;" title="בטל" onmouseover="this.style.background='#FEF3C7'" onmouseout="this.style.background='transparent'">
+            <i data-lucide="x-circle" style="width:15px;height:15px;display:block;"></i>
+          </button>
+          <button onclick="deleteLesson('${l.id}')" style="padding:7px;border-radius:8px;border:none;background:transparent;cursor:pointer;color:#DC2626;" title="מחק" onmouseover="this.style.background='#FEE2E2'" onmouseout="this.style.background='transparent'">
+            <i data-lucide="trash-2" style="width:15px;height:15px;display:block;"></i>
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="7" style="text-align:center;padding:48px;color:#9CA3AF;">לא נמצאו שיעורים</td></tr>`;
+
+  const studentOpts = S.students.map(s=>`<option value="${s.id}" ${lessonFilter.studentId===s.id?'selected':''}>${s.name}</option>`).join('');
+
+  document.getElementById('lessons-content').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+      <h1 style="font-size:2rem;font-weight:800;color:#2C2C1E;">שיעורים</h1>
+      <button onclick="openAddLessonModal()" class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px;"></i> הוסף שיעור</button>
+    </div>
+    <div style="background:#fff;border-radius:14px;border:1px solid #EBEBEB;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <label style="font-size:.85rem;font-weight:700;color:#6B7280;">סטטוס:</label>
+        <select onchange="lessonFilter.status=this.value;renderLessons()" class="field-input" style="width:auto;padding:7px 12px;">
+          <option value="">הכל</option>
+          <option value="confirmed" ${lessonFilter.status==='confirmed'?'selected':''}>מאושר</option>
+          <option value="pending"   ${lessonFilter.status==='pending'  ?'selected':''}>ממתין</option>
+          <option value="cancelled" ${lessonFilter.status==='cancelled'?'selected':''}>בוטל</option>
+          <option value="done"      ${lessonFilter.status==='done'     ?'selected':''}>בוצע</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <label style="font-size:.85rem;font-weight:700;color:#6B7280;">תלמיד:</label>
+        <select onchange="lessonFilter.studentId=this.value;renderLessons()" class="field-input" style="width:auto;padding:7px 12px;">
+          <option value="">הכל</option>${studentOpts}
+        </select>
+      </div>
+      <button onclick="lessonFilter={status:'',studentId:''};renderLessons()" style="font-size:.8rem;font-weight:600;color:#9CA3AF;background:none;border:none;cursor:pointer;margin-right:auto;">נקה סינון</button>
+      <span style="font-size:.85rem;color:#9CA3AF;font-weight:600;">${list.length} שיעורים</span>
+    </div>
+    <div style="background:#fff;border-radius:18px;border:1px solid #EBEBEB;box-shadow:0 1px 4px rgba(0,0,0,.04);overflow:hidden;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#FAFAF8;border-bottom:2px solid #EBEBEB;">
+            <th style="padding:12px 16px;text-align:right;font-size:.83rem;font-weight:700;color:#9CA3AF;">תאריך</th>
+            <th style="padding:12px 16px;text-align:right;font-size:.83rem;font-weight:700;color:#9CA3AF;">שעה</th>
+            <th style="padding:12px 16px;text-align:right;font-size:.83rem;font-weight:700;color:#9CA3AF;">תלמיד</th>
+            <th style="padding:12px 16px;text-align:right;font-size:.83rem;font-weight:700;color:#9CA3AF;">משך</th>
+            <th style="padding:12px 16px;text-align:right;font-size:.83rem;font-weight:700;color:#9CA3AF;">סטטוס</th>
+            <th style="padding:12px 16px;text-align:right;font-size:.83rem;font-weight:700;color:#9CA3AF;">הערות</th>
+            <th style="padding:12px 16px;text-align:right;font-size:.83rem;font-weight:700;color:#9CA3AF;">פעולות</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+function studentSelectOptions(selectedId) {
+  return S.students.map(s=>`<option value="${s.id}" ${s.id===selectedId?'selected':''}>${s.name}</option>`).join('');
+}
+
+function openAddLessonModal(prefillDate, prefillTime) {
+  const d=prefillDate||todayStr(), t=prefillTime||'09:00';
+  openModal(`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;">
+      <h2 style="font-size:1.4rem;font-weight:800;color:#2C2C1E;">הוסף שיעור חדש</h2>
+      <button onclick="closeModal()" style="padding:6px;border-radius:8px;border:none;background:#F3F4F6;cursor:pointer;"><i data-lucide="x" style="width:16px;height:16px;display:block;"></i></button>
+    </div>
+    <form onsubmit="submitAddLesson(event)" style="display:flex;flex-direction:column;gap:16px;">
+      <div><label class="field-label">תלמיד *</label>
+        <select id="fl-sid" required class="field-input"><option value="">בחר תלמיד...</option>${studentSelectOptions('')}</select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label class="field-label">תאריך *</label><input id="fl-date" type="date" required value="${d}" class="field-input"></div>
+        <div><label class="field-label">שעה *</label><input id="fl-time" type="time" required value="${t}" class="field-input"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label class="field-label">משך (דקות)</label>
+          <select id="fl-dur" class="field-input"><option value="45">45 דקות</option><option value="60">60 דקות</option><option value="90">90 דקות</option></select></div>
+        <div><label class="field-label">סטטוס</label>
+          <select id="fl-status" class="field-input"><option value="confirmed">מאושר</option><option value="pending">ממתין</option></select></div>
+      </div>
+      <div><label class="field-label">הערות</label><textarea id="fl-notes" rows="3" placeholder="הערות לשיעור..." class="field-input" style="resize:none;"></textarea></div>
+      <div style="display:flex;gap:10px;margin-top:4px;">
+        <button type="submit" class="btn-primary" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">שמור שיעור</button>
+        <button type="button" onclick="closeModal()" class="btn-ghost" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">ביטול</button>
+      </div>
+    </form>
+  `);
+}
+function submitAddLesson(e) {
+  e.preventDefault();
+  const lesson = { id:genId(), studentId:document.getElementById('fl-sid').value,
+    date:document.getElementById('fl-date').value, time:document.getElementById('fl-time').value,
+    duration:parseInt(document.getElementById('fl-dur').value),
+    status:document.getElementById('fl-status').value, notes:document.getElementById('fl-notes').value };
+  S.lessons.push(lesson);
+  addActivity('lesson', `שיעור חדש: ${getStudent(lesson.studentId).name} – ${fmtDate(lesson.date)} ${lesson.time}`);
+  save(); closeModal(); toast('השיעור נוסף ✓'); renderPage(currentPage);
+}
+
+function editLesson(id) {
+  const l=S.lessons.find(x=>x.id===id); if(!l) return;
+  openModal(`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;">
+      <h2 style="font-size:1.4rem;font-weight:800;color:#2C2C1E;">ערוך שיעור</h2>
+      <button onclick="closeModal()" style="padding:6px;border-radius:8px;border:none;background:#F3F4F6;cursor:pointer;"><i data-lucide="x" style="width:16px;height:16px;display:block;"></i></button>
+    </div>
+    <form onsubmit="submitEditLesson(event,'${id}')" style="display:flex;flex-direction:column;gap:16px;">
+      <div><label class="field-label">תלמיד</label><select id="el-sid" required class="field-input">${studentSelectOptions(l.studentId)}</select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label class="field-label">תאריך</label><input id="el-date" type="date" required value="${l.date}" class="field-input"></div>
+        <div><label class="field-label">שעה</label><input id="el-time" type="time" required value="${l.time}" class="field-input"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label class="field-label">משך</label>
+          <select id="el-dur" class="field-input">
+            <option value="45" ${l.duration==45?'selected':''}>45 דקות</option>
+            <option value="60" ${l.duration==60?'selected':''}>60 דקות</option>
+            <option value="90" ${l.duration==90?'selected':''}>90 דקות</option>
+          </select></div>
+        <div><label class="field-label">סטטוס</label>
+          <select id="el-status" class="field-input">
+            <option value="confirmed" ${l.status==='confirmed'?'selected':''}>מאושר</option>
+            <option value="pending"   ${l.status==='pending'  ?'selected':''}>ממתין</option>
+            <option value="done"      ${l.status==='done'     ?'selected':''}>בוצע</option>
+            <option value="cancelled" ${l.status==='cancelled'?'selected':''}>בוטל</option>
+          </select></div>
+      </div>
+      <div><label class="field-label">הערות</label><textarea id="el-notes" rows="3" class="field-input" style="resize:none;">${l.notes||''}</textarea></div>
+      <div style="display:flex;gap:10px;margin-top:4px;">
+        <button type="submit" class="btn-primary" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">עדכן שיעור</button>
+        <button type="button" onclick="closeModal()" class="btn-ghost" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">ביטול</button>
+      </div>
+    </form>
+  `);
+}
+function submitEditLesson(e,id) {
+  e.preventDefault();
+  const l=S.lessons.find(x=>x.id===id); if(!l) return;
+  l.studentId=document.getElementById('el-sid').value; l.date=document.getElementById('el-date').value;
+  l.time=document.getElementById('el-time').value; l.duration=parseInt(document.getElementById('el-dur').value);
+  l.status=document.getElementById('el-status').value; l.notes=document.getElementById('el-notes').value;
+  save(); closeModal(); toast('השיעור עודכן ✓'); renderPage(currentPage);
+}
+function cancelLesson(id) {
+  const l=S.lessons.find(x=>x.id===id); if(!l) return;
+  if(l.status==='cancelled'){toast('השיעור כבר מבוטל');return;}
+  l.status='cancelled';
+  addActivity('cancel', `שיעור בוטל: ${getStudent(l.studentId).name} – ${fmtDate(l.date)} ${l.time}`);
+  save(); toast('השיעור בוטל'); renderPage(currentPage);
+}
+function deleteLesson(id) {
+  if(!confirm('למחוק שיעור זה לצמיתות?')) return;
+  S.lessons=S.lessons.filter(l=>l.id!==id); save(); toast('השיעור נמחק'); renderPage(currentPage);
+}
+
+// ============================================================
+// LEADS
+// ============================================================
+const STAGES = [
+  { id:'new',       label:'חדש',         hdrBg:'#DBEAFE', hdrTxt:'#1E40AF' },
+  { id:'contacted', label:'יצרתי קשר',   hdrBg:'#FEF9C3', hdrTxt:'#854D0E' },
+  { id:'trial',     label:'שיעור נסיון', hdrBg:'#EDE9FE', hdrTxt:'#5B21B6' },
+  { id:'enrolled',  label:'נרשם ✓',      hdrBg:'#DCFCE7', hdrTxt:'#166534' },
+];
+
+function renderLeads() {
+  const today = todayStr();
+  const columns = STAGES.map(stage => {
+    const leads = S.leads.filter(l=>l.stage===stage.id);
+    const cards = leads.map(lead => {
+      const overdue = lead.followUpDate && lead.followUpDate < today && stage.id !== 'enrolled';
+      const dueToday = lead.followUpDate === today;
+      const moveBtns = STAGES.filter(s=>s.id!==stage.id).map(s=>
+        `<button onclick="moveLead('${lead.id}','${s.id}')"
+          style="flex:1;font-size:.75rem;padding:5px 4px;border-radius:7px;border:none;cursor:pointer;
+          font-weight:700;font-family:'Heebo',sans-serif;background:${s.hdrBg};color:${s.hdrTxt};"
+          onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">${s.label}</button>`
+      ).join('');
+      return `<div class="kanban-card">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">
+          <div>
+            <div style="font-weight:800;font-size:1rem;color:#2C2C1E;">${lead.name}</div>
+            <a href="tel:${lead.phone}" style="font-size:.875rem;color:#4A7C59;font-weight:600;text-decoration:none;">${lead.phone}</a>
+          </div>
+          <div style="display:flex;gap:3px;flex-shrink:0;">
+            <button onclick="editLead('${lead.id}')" style="padding:5px;border-radius:7px;border:none;background:transparent;cursor:pointer;color:#9CA3AF;" onmouseover="this.style.background='#F3F4F6'" onmouseout="this.style.background='transparent'">
+              <i data-lucide="pencil" style="width:14px;height:14px;display:block;"></i>
+            </button>
+            <button onclick="deleteLead('${lead.id}')" style="padding:5px;border-radius:7px;border:none;background:transparent;cursor:pointer;color:#EF4444;" onmouseover="this.style.background='#FEE2E2'" onmouseout="this.style.background='transparent'">
+              <i data-lucide="trash-2" style="width:14px;height:14px;display:block;"></i>
+            </button>
+          </div>
+        </div>
+        ${lead.source?`<span style="font-size:.75rem;background:#F3F4F6;color:#6B7280;padding:2px 8px;border-radius:999px;font-weight:600;">${lead.source}</span>`:''}
+        ${lead.notes?`<p style="font-size:.83rem;color:#6B7280;margin-top:7px;line-height:1.4;">${lead.notes}</p>`:''}
+        ${lead.followUpDate?`<div style="display:flex;align-items:center;gap:5px;margin-top:8px;">
+          <i data-lucide="clock" style="width:13px;height:13px;color:${overdue?'#DC2626':dueToday?'#D97706':'#9CA3AF'};"></i>
+          <span style="font-size:.78rem;font-weight:700;color:${overdue?'#DC2626':dueToday?'#D97706':'#9CA3AF'};">
+            מעקב: ${fmtDate(lead.followUpDate)}${overdue?' ⚠️':''}</span>
+        </div>`:''}
+        <div style="display:flex;gap:5px;margin-top:10px;padding-top:10px;border-top:1px solid #F3F4F6;">${moveBtns}</div>
+      </div>`;
+    }).join('') || `<div style="text-align:center;padding:28px 16px;color:#9CA3AF;font-size:.875rem;">אין לידים</div>`;
+    return `<div class="kanban-col">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span style="background:${stage.hdrBg};color:${stage.hdrTxt};font-weight:800;font-size:.875rem;padding:5px 12px;border-radius:10px;">${stage.label}</span>
+        <span style="font-size:.85rem;color:#9CA3AF;font-weight:600;">${leads.length}</span>
+      </div>
+      ${cards}
+    </div>`;
+  }).join('');
+
+  document.getElementById('leads-content').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+      <h1 style="font-size:2rem;font-weight:800;color:#2C2C1E;">לידים</h1>
+      <button onclick="openAddLeadModal()" class="btn-primary"><i data-lucide="plus" style="width:16px;height:16px;"></i> ליד חדש</button>
+    </div>
+    <div style="display:flex;gap:18px;overflow-x:auto;padding-bottom:16px;align-items:flex-start;">${columns}</div>
+  `;
+  lucide.createIcons();
+}
+
+function openAddLeadModal() {
+  openModal(`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;">
+      <h2 style="font-size:1.4rem;font-weight:800;color:#2C2C1E;">ליד חדש</h2>
+      <button onclick="closeModal()" style="padding:6px;border-radius:8px;border:none;background:#F3F4F6;cursor:pointer;"><i data-lucide="x" style="width:16px;height:16px;display:block;"></i></button>
+    </div>
+    <form onsubmit="submitAddLead(event)" style="display:flex;flex-direction:column;gap:16px;">
+      <div><label class="field-label">שם מלא *</label><input id="ll-name" type="text" required placeholder="שם ומשפחה" class="field-input"></div>
+      <div><label class="field-label">טלפון *</label><input id="ll-phone" type="tel" required placeholder="050-0000000" class="field-input"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label class="field-label">מקור</label>
+          <select id="ll-src" class="field-input"><option value="">לא ידוע</option><option>המלצה</option><option>גוגל</option><option>פייסבוק</option><option>אינסטגרם</option><option>וואטסאפ</option><option>אחר</option></select></div>
+        <div><label class="field-label">תאריך מעקב</label><input id="ll-fu" type="date" value="${todayStr()}" class="field-input"></div>
+      </div>
+      <div><label class="field-label">הערות</label><textarea id="ll-notes" rows="3" placeholder="פרטים נוספים..." class="field-input" style="resize:none;"></textarea></div>
+      <div style="display:flex;gap:10px;margin-top:4px;">
+        <button type="submit" class="btn-primary" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">הוסף ליד</button>
+        <button type="button" onclick="closeModal()" class="btn-ghost" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">ביטול</button>
+      </div>
+    </form>
+  `);
+}
+function submitAddLead(e) {
+  e.preventDefault();
+  const lead = { id:genId(), name:document.getElementById('ll-name').value,
+    phone:document.getElementById('ll-phone').value, source:document.getElementById('ll-src').value,
+    stage:'new', followUpDate:document.getElementById('ll-fu').value, notes:document.getElementById('ll-notes').value };
+  S.leads.push(lead);
+  addActivity('lead', `ליד חדש: ${lead.name}`);
+  save(); closeModal(); toast('הליד נוסף ✓'); renderPage(currentPage);
+}
+
+function editLead(id) {
+  const l=S.leads.find(x=>x.id===id); if(!l) return;
+  const srcList=['המלצה','גוגל','פייסבוק','אינסטגרם','וואטסאפ','אחר'];
+  const srcOpts=['', ...srcList].map(s=>`<option value="${s}" ${l.source===s?'selected':''}>${s||'לא ידוע'}</option>`).join('');
+  const stageOpts=[...STAGES,{id:'lost',label:'אבד'}].map(s=>`<option value="${s.id}" ${l.stage===s.id?'selected':''}>${s.label}</option>`).join('');
+  openModal(`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;">
+      <h2 style="font-size:1.4rem;font-weight:800;color:#2C2C1E;">ערוך ליד</h2>
+      <button onclick="closeModal()" style="padding:6px;border-radius:8px;border:none;background:#F3F4F6;cursor:pointer;"><i data-lucide="x" style="width:16px;height:16px;display:block;"></i></button>
+    </div>
+    <form onsubmit="submitEditLead(event,'${id}')" style="display:flex;flex-direction:column;gap:16px;">
+      <div><label class="field-label">שם מלא</label><input id="el2-name" type="text" required value="${l.name}" class="field-input"></div>
+      <div><label class="field-label">טלפון</label><input id="el2-phone" type="tel" required value="${l.phone}" class="field-input"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label class="field-label">מקור</label><select id="el2-src" class="field-input">${srcOpts}</select></div>
+        <div><label class="field-label">שלב</label><select id="el2-stage" class="field-input">${stageOpts}</select></div>
+      </div>
+      <div><label class="field-label">תאריך מעקב</label><input id="el2-fu" type="date" value="${l.followUpDate||''}" class="field-input"></div>
+      <div><label class="field-label">הערות</label><textarea id="el2-notes" rows="3" class="field-input" style="resize:none;">${l.notes||''}</textarea></div>
+      <div style="display:flex;gap:10px;margin-top:4px;">
+        <button type="submit" class="btn-primary" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">שמור</button>
+        <button type="button" onclick="closeModal()" class="btn-ghost" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">ביטול</button>
+      </div>
+    </form>
+  `);
+}
+function submitEditLead(e,id) {
+  e.preventDefault();
+  const l=S.leads.find(x=>x.id===id); if(!l) return;
+  l.name=document.getElementById('el2-name').value; l.phone=document.getElementById('el2-phone').value;
+  l.source=document.getElementById('el2-src').value; l.stage=document.getElementById('el2-stage').value;
+  l.followUpDate=document.getElementById('el2-fu').value; l.notes=document.getElementById('el2-notes').value;
+  save(); closeModal(); toast('הליד עודכן ✓'); renderPage(currentPage);
+}
+function moveLead(id,stage) {
+  const l=S.leads.find(x=>x.id===id); if(!l) return;
+  l.stage=stage; addActivity('lead',`${l.name} עבר ל"${STAGE_LABEL[stage]}"`);
+  save(); toast(`עבר ל"${STAGE_LABEL[stage]}" ✓`); renderLeads();
+}
+function deleteLead(id) {
+  if(!confirm('למחוק ליד זה?')) return;
+  S.leads=S.leads.filter(l=>l.id!==id); save(); toast('הליד נמחק'); renderPage(currentPage);
+}
+
+// ============================================================
+// STUDENTS
+// ============================================================
+function renderStudents() {
+  const cards = S.students.map(s => {
+    const allL=S.lessons.filter(l=>l.studentId===s.id);
+    const done=allL.filter(l=>l.status==='done').length;
+    const upcoming=allL.filter(l=>l.date>=todayStr()&&l.status==='confirmed').length;
+    return `<div onclick="openStudentProfile('${s.id}')"
+      style="background:#fff;border-radius:20px;border:1px solid #EBEBEB;box-shadow:0 1px 4px rgba(0,0,0,.04);
+        padding:22px;cursor:pointer;transition:box-shadow .15s;"
+      onmouseover="this.style.boxShadow='0 6px 20px rgba(0,0,0,.1)'"
+      onmouseout="this.style.boxShadow='0 1px 4px rgba(0,0,0,.04)'">
+      <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:16px;">
+        <div class="avatar-circle" style="width:52px;height:52px;font-size:1.4rem;border-radius:16px;">${s.avatar}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:1.15rem;font-weight:800;color:#2C2C1E;">${s.name}</div>
+          <div style="font-size:.875rem;color:#4A7C59;font-weight:600;margin-top:2px;">${s.phone}</div>
+          <span style="font-size:.75rem;background:#E8F0EB;color:#4A7C59;padding:2px 8px;border-radius:999px;font-weight:700;display:inline-block;margin-top:5px;">רישיון ${s.licenseType}</span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:14px;border-top:1px solid #F5F5F0;">
+        <div style="text-align:center;background:#F8F7F4;border-radius:12px;padding:10px;">
+          <div style="font-size:1.6rem;font-weight:800;color:#2C2C1E;">${done}</div>
+          <div style="font-size:.75rem;color:#9CA3AF;font-weight:600;">שיעורים הושלמו</div>
+        </div>
+        <div style="text-align:center;background:#E8F0EB;border-radius:12px;padding:10px;">
+          <div style="font-size:1.6rem;font-weight:800;color:#4A7C59;">${upcoming}</div>
+          <div style="font-size:.75rem;color:#4A7C59;font-weight:600;">שיעורים קרובים</div>
+        </div>
+      </div>
+      ${s.notes?`<div style="margin-top:10px;font-size:.8rem;color:#9CA3AF;border-top:1px solid #F5F5F0;padding-top:9px;line-height:1.4;">${s.notes}</div>`:''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('students-content').innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+      <h1 style="font-size:2rem;font-weight:800;color:#2C2C1E;">תלמידים</h1>
+      <button onclick="openAddStudentModal()" class="btn-primary"><i data-lucide="user-plus" style="width:16px;height:16px;"></i> תלמיד חדש</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px;">
+      ${cards||`<div style="grid-column:1/-1;text-align:center;padding:60px;color:#9CA3AF;">אין תלמידים רשומים</div>`}
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+function openStudentProfile(id) {
+  const s=S.students.find(x=>x.id===id); if(!s) return;
+  const lessons=S.lessons.filter(l=>l.studentId===id).sort((a,b)=>(b.date+b.time)>(a.date+a.time)?1:-1);
+  const histHTML = lessons.slice(0,10).map(l=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #F5F5F0;">
+      <div style="font-size:.83rem;font-weight:600;color:#6B7280;white-space:nowrap;min-width:110px;">${fmtDate(l.date)} ${l.time}</div>
+      <div style="flex:1;font-size:.875rem;color:#2C2C1E;">${l.notes||'—'}</div>
+      <div>${statusBadge(l.status)}</div>
+    </div>`).join('') || `<div style="text-align:center;padding:20px;color:#9CA3AF;font-size:.875rem;">אין שיעורים רשומים</div>`;
+
+  openModal(`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <h2 style="font-size:1.4rem;font-weight:800;color:#2C2C1E;">פרופיל תלמיד</h2>
+      <button onclick="closeModal()" style="padding:6px;border-radius:8px;border:none;background:#F3F4F6;cursor:pointer;"><i data-lucide="x" style="width:16px;height:16px;display:block;"></i></button>
+    </div>
+    <div style="background:#E8F0EB;border-radius:16px;padding:18px;display:flex;align-items:center;gap:14px;margin-bottom:18px;">
+      <div class="avatar-circle" style="width:60px;height:60px;font-size:1.7rem;background:#4A7C59;color:#fff;border-radius:18px;">${s.avatar}</div>
+      <div>
+        <div style="font-size:1.3rem;font-weight:800;color:#2C2C1E;">${s.name}</div>
+        <div style="color:#4A7C59;font-weight:600;font-size:.95rem;">${s.phone}</div>
+        ${s.email?`<div style="font-size:.83rem;color:#6B7280;">${s.email}</div>`:''}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+      <div style="background:#F8F7F4;border-radius:12px;padding:12px 14px;">
+        <div style="font-size:.75rem;color:#9CA3AF;font-weight:700;margin-bottom:3px;">סוג רישיון</div>
+        <div style="font-weight:800;font-size:1.1rem;color:#2C2C1E;">רישיון ${s.licenseType}</div>
+      </div>
+      <div style="background:#F8F7F4;border-radius:12px;padding:12px 14px;">
+        <div style="font-size:.75rem;color:#9CA3AF;font-weight:700;margin-bottom:3px;">תאריך התחלה</div>
+        <div style="font-weight:800;font-size:1.1rem;color:#2C2C1E;">${s.startDate?fmtDate(s.startDate):'—'}</div>
+      </div>
+    </div>
+    ${s.notes?`<div style="background:#FFFBEB;border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:.875rem;color:#2C2C1E;border:1px solid #FDE68A;"><strong>הערות:</strong> ${s.notes}</div>`:''}
+    <div style="margin-bottom:16px;">
+      <div style="font-weight:800;font-size:.95rem;color:#2C2C1E;margin-bottom:8px;">היסטוריית שיעורים (${lessons.length})</div>
+      <div style="background:#F8F7F4;border-radius:12px;padding:4px 14px;max-height:180px;overflow-y:auto;">${histHTML}</div>
+    </div>
+    <div style="border:2px dashed #D1D5DB;border-radius:14px;padding:20px;text-align:center;margin-bottom:18px;">
+      <i data-lucide="paperclip" style="width:28px;height:28px;color:#9CA3AF;margin:0 auto 8px;display:block;"></i>
+      <div style="font-weight:700;color:#2C2C1E;margin-bottom:4px;font-size:.95rem;">שלח מסמך לתלמיד</div>
+      <div style="font-size:.8rem;color:#9CA3AF;margin-bottom:12px;">PDF, תמונה, או כל קובץ</div>
+      <label style="cursor:pointer;display:inline-block;">
+        <span class="btn-primary" style="font-size:.875rem;padding:9px 18px;">בחר קובץ</span>
+        <input type="file" style="display:none;" onchange="handleDocUpload(event,'${id}')">
+      </label>
+      ${s.docName?`<div style="margin-top:8px;font-size:.83rem;color:#4A7C59;font-weight:700;">✓ ${s.docName}</div>`:''}
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="closeModal();setTimeout(()=>openEditStudentModal('${id}'),50)" class="btn-ghost" style="flex:1;justify-content:center;font-size:.95rem;padding:12px;">
+        <i data-lucide="pencil" style="width:15px;height:15px;"></i> ערוך פרטים
+      </button>
+      <button onclick="deleteStudent('${id}')"
+        style="padding:12px 16px;border-radius:12px;border:2px solid #FCA5A5;color:#DC2626;background:transparent;cursor:pointer;font-family:'Heebo',sans-serif;font-weight:700;font-size:.95rem;"
+        onmouseover="this.style.background='#FEF2F2'" onmouseout="this.style.background='transparent'">מחק</button>
+    </div>
+  `);
+}
+
+function handleDocUpload(e,id) {
+  const file=e.target.files[0]; if(!file) return;
+  const s=S.students.find(x=>x.id===id); if(!s) return;
+  s.docName=file.name; save(); toast(`"${file.name}" נשמר ✓`);
+  closeModal(); setTimeout(()=>openStudentProfile(id),80);
+}
+
+function openAddStudentModal() {
+  openModal(`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;">
+      <h2 style="font-size:1.4rem;font-weight:800;color:#2C2C1E;">תלמיד חדש</h2>
+      <button onclick="closeModal()" style="padding:6px;border-radius:8px;border:none;background:#F3F4F6;cursor:pointer;"><i data-lucide="x" style="width:16px;height:16px;display:block;"></i></button>
+    </div>
+    <form onsubmit="submitAddStudent(event)" style="display:flex;flex-direction:column;gap:16px;">
+      <div><label class="field-label">שם מלא *</label><input id="sf-name" type="text" required placeholder="שם ומשפחה" class="field-input"></div>
+      <div><label class="field-label">טלפון *</label><input id="sf-phone" type="tel" required placeholder="050-0000000" class="field-input"></div>
+      <div><label class="field-label">אימייל</label><input id="sf-email" type="email" placeholder="email@example.com" class="field-input"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label class="field-label">סוג רישיון</label>
+          <select id="sf-lic" class="field-input"><option>B</option><option>A</option><option>A1</option><option>C</option><option>D</option></select></div>
+        <div><label class="field-label">תאריך התחלה</label><input id="sf-start" type="date" value="${todayStr()}" class="field-input"></div>
+      </div>
+      <div><label class="field-label">הערות</label><textarea id="sf-notes" rows="3" placeholder="הערות..." class="field-input" style="resize:none;"></textarea></div>
+      <div style="display:flex;gap:10px;margin-top:4px;">
+        <button type="submit" class="btn-primary" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">הוסף תלמיד</button>
+        <button type="button" onclick="closeModal()" class="btn-ghost" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">ביטול</button>
+      </div>
+    </form>
+  `);
+}
+function submitAddStudent(e) {
+  e.preventDefault();
+  const name=document.getElementById('sf-name').value.trim();
+  S.students.push({ id:genId(), name, phone:document.getElementById('sf-phone').value,
+    email:document.getElementById('sf-email').value, licenseType:document.getElementById('sf-lic').value,
+    startDate:document.getElementById('sf-start').value, notes:document.getElementById('sf-notes').value,
+    avatar:name.charAt(0), docName:'' });
+  addActivity('student', `תלמיד חדש: ${name}`);
+  save(); closeModal(); toast('התלמיד נוסף ✓'); renderPage(currentPage);
+}
+
+function openEditStudentModal(id) {
+  const s=S.students.find(x=>x.id===id); if(!s) return;
+  const licOpts=['B','A','A1','C','D'].map(l=>`<option ${s.licenseType===l?'selected':''}>${l}</option>`).join('');
+  openModal(`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;">
+      <h2 style="font-size:1.4rem;font-weight:800;color:#2C2C1E;">ערוך תלמיד</h2>
+      <button onclick="closeModal()" style="padding:6px;border-radius:8px;border:none;background:#F3F4F6;cursor:pointer;"><i data-lucide="x" style="width:16px;height:16px;display:block;"></i></button>
+    </div>
+    <form onsubmit="submitEditStudent(event,'${id}')" style="display:flex;flex-direction:column;gap:16px;">
+      <div><label class="field-label">שם מלא</label><input id="esf-name" type="text" required value="${s.name}" class="field-input"></div>
+      <div><label class="field-label">טלפון</label><input id="esf-phone" type="tel" required value="${s.phone}" class="field-input"></div>
+      <div><label class="field-label">אימייל</label><input id="esf-email" type="email" value="${s.email||''}" class="field-input"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div><label class="field-label">סוג רישיון</label><select id="esf-lic" class="field-input">${licOpts}</select></div>
+        <div><label class="field-label">תאריך התחלה</label><input id="esf-start" type="date" value="${s.startDate||''}" class="field-input"></div>
+      </div>
+      <div><label class="field-label">הערות</label><textarea id="esf-notes" rows="3" class="field-input" style="resize:none;">${s.notes||''}</textarea></div>
+      <div style="display:flex;gap:10px;margin-top:4px;">
+        <button type="submit" class="btn-primary" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">שמור</button>
+        <button type="button" onclick="closeModal()" class="btn-ghost" style="flex:1;justify-content:center;font-size:1rem;padding:13px;">ביטול</button>
+      </div>
+    </form>
+  `);
+}
+function submitEditStudent(e,id) {
+  e.preventDefault();
+  const s=S.students.find(x=>x.id===id); if(!s) return;
+  s.name=document.getElementById('esf-name').value.trim(); s.phone=document.getElementById('esf-phone').value;
+  s.email=document.getElementById('esf-email').value; s.licenseType=document.getElementById('esf-lic').value;
+  s.startDate=document.getElementById('esf-start').value; s.notes=document.getElementById('esf-notes').value;
+  s.avatar=s.name.charAt(0);
+  save(); closeModal(); toast('פרטי התלמיד עודכנו ✓'); renderPage(currentPage);
+}
+function deleteStudent(id) {
+  if(!confirm('למחוק תלמיד זה?')) return;
+  S.students=S.students.filter(s=>s.id!==id); save(); closeModal(); toast('התלמיד נמחק'); renderPage(currentPage);
+}
+
+// ============================================================
+// ⑥ BOOT — check for existing Supabase session on page load
+// ============================================================
+(async function boot() {
+  lucide.createIcons();
+
+  if (DEMO_MODE) {
+    // No Supabase keys — go straight to demo
+    enterDemoMode();
+    return;
+  }
+
+  // Check for an existing session (persisted by Supabase in localStorage)
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    currentUser = session.user;
+    await bootApp();
+  }
+  // else: auth screen remains visible, user must log in
+})();
+</script>
+</body>
+</html>
